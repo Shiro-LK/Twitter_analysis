@@ -1,5 +1,9 @@
 *.hdf5
 *.jpg
 *.JPG
-/logs
+logs/
 *.pkl
+__pycache__/
+images/
+glove.6B/
+
