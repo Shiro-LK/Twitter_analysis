@@ -2,3 +2,4 @@
 *.jpg
 *.JPG
 /logs
+*.pkl
