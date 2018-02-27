@@ -6,7 +6,7 @@ Created on Sat Dec 23 18:16:35 2017
 """
 import pickle
 from preprocess import load_data
-from model import create_CBOW, create_simpleModel, create_lstm, create_convModel
+from model import create_CBOW, create_CBOWNN, create_simpleModel, create_lstm, create_convModel,  create_convModel2
 from metrics import f1, accuracy_per_class0, accuracy_per_class1
 import keras
 from keras.preprocessing.sequence import pad_sequences
@@ -114,7 +114,20 @@ def generator_test(features, batch_size, dtype=np.int, input_shape=68):
                 index = cpt*batch_size + i
                 batch_features[i] = features[index]
             yield batch_features
-            
+ 
+##
+def copy_weight(newmodel, oldmodel):
+    dic_w = {}
+    for layer in oldmodel.layers:
+        print(layer.name)
+        dic_w[layer.name] = layer.get_weights()
+    
+    for layer in newmodel.layers:
+        if layer.name in dic_w and layer.name.find('embedding') == -1:
+            layer.set_weights(dic_w[layer.name])
+            print(layer.name)
+    return newmodel            
+
 def train_model(x_tr, y_tr, x_val, y_val, max_length, size_voc, dic_word, output_dim=100, batch_size = 50, embedding_glove = False, lemmatisation=False, output_name = 'temp'):
     '''
         train model from train and validatoin data
@@ -134,7 +147,14 @@ def train_model(x_tr, y_tr, x_val, y_val, max_length, size_voc, dic_word, output
         emb = load_GloveEmbedding(output_dim, dic_word, lemmatisation=lemmatisation)
     # create model
 
-    model = create_convModel(input_dim=size_voc, max_length=max_length, output_dim=output_dim, n_class= 2, embedding = emb)
+    model = create_lstm(input_dim=size_voc, max_length=max_length, output_dim=output_dim, n_class= 2, embedding = emb)
+    
+    old = load_model('lstm_glove_bigDataset.hdf5')
+    # load weight for transfer learning
+    model = copy_weight(model, old)
+    del old
+    
+    
     sgd = keras.optimizers.SGD(lr=0.001, momentum=0.9, decay=1e-5, nesterov=True)
     adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
     adagrad = keras.optimizers.Adagrad(lr=0.001, epsilon=None, decay=0.0)
@@ -152,8 +172,8 @@ def train_model(x_tr, y_tr, x_val, y_val, max_length, size_voc, dic_word, output
     print('step test :' , step_val)
     
      # callback
-    callback_tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, 
-                                                       batch_size=32, write_graph=True, write_grads=False, 
+    callback_tensorboard = keras.callbacks.TensorBoard(log_dir='./logs/'+output_name, histogram_freq=0, 
+                                                       batch_size=16, write_graph=True, write_grads=False, 
                                                        write_images=False, embeddings_freq=0, embeddings_layer_names=None, 
                                                        embeddings_metadata=None)
     lr_decay = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, verbose=1, mode='auto', epsilon=0.0001, cooldown=0, min_lr=0.0)    
@@ -163,7 +183,7 @@ def train_model(x_tr, y_tr, x_val, y_val, max_length, size_voc, dic_word, output
     # train 
     model.fit_generator(generator_train,
           steps_per_epoch=step_train,
-          epochs=20,
+          epochs=15,
           verbose=1,
           validation_data=generator_valid,
           validation_steps=step_val,
@@ -181,11 +201,12 @@ def main_SemEval():
         word_number : dictionnary which associates word to number depending of the training set
         length : maximum length of a sequence
     '''
-    coeff=1.1
-    lemmatisation=True
-    X_train, Y_train, X_test, Y_test, length, word_number = load_data('data/twb_cleanv5.txt', 'data/twb-dev_cleanv5.txt', threshold = 10, seq = -1, coeff= coeff, lemmatisation=lemmatisation)
-    #print(X_test)
-    
+    coeff=1.0
+    lemmatisation=False
+    output_name = 'lstmTF_semeval'
+    X_train, Y_train, X_test, Y_test, length, word_number = load_data('data/twb_cleanv5.txt', 'data/twb-dev_cleanv5.txt', threshold = 5, seq = 40, coeff= coeff, lemmatisation=lemmatisation)
+    #print(X_test)lstm
+    word_pkl = 'word_number_lstmTF_semeval.pkl' #'word_number_cbowdataset2_noglove.pkl'
     # list vocabulaire
     size_vocab = max(list(word_number.values()))
     print('size vocabulary :', size_vocab)
@@ -199,9 +220,9 @@ def main_SemEval():
     
     ## enrengistre le dictionnaire qui contient la conversion entre mot -> nombre. 
     ##  Attention : le dictionnaire change à chaque nouveau entrainement, si on veut evaluer le modele, penser à charger le dictionnaire et donc utiliser la fonction load3
-    pickle.dump(word_number, open('word_number_cbowdataset2_noglove.pkl', 'wb'))
+    pickle.dump(word_number, open(word_pkl, 'wb'))
     
-    model = train_model(X_train, Y_train, X_test, Y_test, int(coeff*length), size_vocab, output_dim=300, batch_size = 128, dic_word = word_number, embedding_glove = True, lemmatisation=lemmatisation)
+    model = train_model(X_train, Y_train, X_test, Y_test, int(coeff*length), size_vocab, output_dim=300, batch_size = 32, dic_word = word_number, embedding_glove = True, lemmatisation=lemmatisation, output_name = output_name)
     #print(model.evaluate(data_test, label_rt))
     
 def main_big():
@@ -213,9 +234,9 @@ def main_big():
     '''
     coeff=1.1
     lemmatisation=True
-    output_name = 'Conv_glove_bigDataset_lemmatisation'
+    output_name = 'conv2_bigDataset_lem'
     #X_train, Y_train, X_test, Y_test, length, word_number = load_data('data/twb_clean.txt', 'data/twb-dev_clean.txt', threshold = 10, seq = 60)
-    X_train, Y_train, X_test, Y_test, length, word_number = load_data('Sentiment_Analysis_Dataset_correct_train_preproces.txt', 'Sentiment_Analysis_Dataset_correct_test_preproces.txt', threshold = 10, seq = -1, coeff= coeff, lemmatisation=lemmatisation)
+    X_train, Y_train, X_test, Y_test, length, word_number = load_data('Sentiment_Analysis_Dataset_correct_train_preproces.txt', 'Sentiment_Analysis_Dataset_correct_test_preproces.txt', threshold = 5, seq = -1, coeff= coeff, lemmatisation=lemmatisation)
     #print(X_test)
     
     # list vocabulaire
@@ -236,26 +257,29 @@ def main_big():
     
     ## enrengistre le dictionnaire qui contient la conversion entre mot -> nombre. 
     ##  Attention : le dictionnaire change à chaque nouveau entrainement, si on veut evaluer le modele, penser à charger le dictionnaire et donc utiliser la fonction load3
-    pickle.dump(word_number, open('word_number_convModel_glove_lemmatisation.pkl', 'wb'))
+    pickle.dump(word_number, open('word_number_conv2_glove_lem.pkl', 'wb'))
     model = train_model(X_train, Y_train, X_test, Y_test, int(coeff*length), size_vocab, output_dim=300, batch_size = 128, dic_word = word_number, embedding_glove = True, lemmatisation=lemmatisation, output_name = output_name)
     #print(model.evaluate(data_test, label_rt))
 
 def main_eval():
-    coeff= 1.1
-    output = 'cbow_dataset2'
-    word_number = pickle.load(open('word_number_cbowdataset2.pkl', 'rb'))
-    lemmatisation=True
-    #X_train, Y_train, X_test, Y_test, length, word_number = load_data('data/twb_clean.txt', 'data/twb-dev_clean.txt', threshold = 10, seq = 60)
-    X_train, Y_train, x_val, y_val, length = load_data('Sentiment_Analysis_Dataset_correct_train_preprocess.txt', 'Sentiment_Analysis_Dataset_correct_test_preprocess.txt', word_number, with_neutral=False, threshold = 10, seq = -1, coeff=coeff, lemmatisation=lemmatisation)
+    coeff= 1.0
+    output = 'lstmTF_semeval' #'conv2_bigDataset_lem' #'lstm_bigDataset'
+    word_pkl = 'word_number_lstmTF_semeval.pkl' #'word_number_conv2_glove_lem.pkl' #'word_number_lstm_glove.pkl'
+    word_number = pickle.load(open(word_pkl, 'rb'))
+    lemmatisation=False
+    X_train, Y_train, x_val, y_val, length, word_number2 = load_data('data/twb_cleanv5.txt', 'data/twb-dev_cleanv5.txt', threshold = 5, seq = 40,coeff=coeff, lemmatisation=lemmatisation, word_number=word_number)
+    #X_train, Y_train, x_val, y_val, length, word_number2 = load_data('Sentiment_Analysis_Dataset_correct_test_preproces.txt', 'Sentiment_Analysis_Dataset_correct_test_preproces.txt', threshold = 5, seq = 117, coeff=coeff, lemmatisation=lemmatisation,word_number=word_number)
     
     size_vocab = max(list(word_number.values()))    
     model = load_model(output+'.hdf5')
     #print(model.evaluate_generator(generator_valid, step_val))
     #print(model.evaluate_generator(generator_valid, step_val))
-    generator_valid = generator(x_val, y_val, batch_size=1, input_shape=(length))
+    generator_valid = generator(x_val, y_val, batch_size=1, input_shape=int(length*coeff))
     print(model.evaluate_generator(generator_valid, int(len(x_val)/1)))
-    generator_valid2 = generator_test(x_val, batch_size=1, input_shape=(length))
+    generator_valid2 = generator_test(x_val, batch_size=1, input_shape=int(length*coeff))
     eval_model(model, generator_valid2, y_val, len(x_val)/1)
     
 if __name__ == "__main__":
-    main_big()
+    main_SemEval()
+    #main_big()
+    main_eval()

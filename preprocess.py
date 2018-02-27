@@ -19,9 +19,9 @@ def convert_label(labels):
     '''
     label_ = []
     for i in range(len(labels)):
-        if labels[i].find('0') != -1:
+        if labels[i].find('0') != -1 or labels[i].find('negative') != -1:
             label_.append(0)
-        elif labels[i].find('1') != -1:
+        elif labels[i].find('1') != -1 or labels[i].find('positive') != -1:
             label_.append(1)
         else:
             print('Error label, check!')
@@ -85,7 +85,7 @@ def transform_word_to_number(data, dict_word_to_number):
         data_.append(temp)
     return data_
         
-def load_data(filetrain, filetest, threshold = 5, seq=-1, coeff=1.5, lemmatisation=False):
+def load_data(filetrain, filetest, threshold = 5, seq=-1, coeff=1.5, lemmatisation=False, word_number=None):
     '''
         preprocess data : tokenize and tranform word into number (1-N)
         if threshold <= 0, no threshold
@@ -116,7 +116,9 @@ def load_data(filetrain, filetest, threshold = 5, seq=-1, coeff=1.5, lemmatisati
     if seq != -1:
         seq_max=seq
     print('sequence max ', seq_max)
-    word_number = word_to_number(dic_count, threshold)
+    if word_number == None:  
+        word_number = word_to_number(dic_count, threshold)
+
     
     # convert word to number
     data_tr_ = transform_word_to_number(data_tr, word_number)
